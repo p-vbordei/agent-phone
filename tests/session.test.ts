@@ -92,3 +92,28 @@ test('server blocks at credit=0 and resumes after credits granted', async () => 
   expect(got.length).toBe(20);
   expect(got[19]).toBe(19);
 });
+
+test('cancel mid-stream leaves session usable for next RPC', async () => {
+  const { a, b } = linkedSessions();
+  let highWater = -1;
+  b.handle('infinite', async function* () {
+    for (let i = 0; ; i++) {
+      highWater = i;
+      yield i;
+    }
+  });
+  b.handle('echo', (p) => p);
+
+  const iter = a.stream('infinite', {}, 8)[Symbol.asyncIterator]();
+  for (let i = 0; i < 3; i++) await iter.next();
+  const cancelAt = highWater;
+  // biome-ignore lint/style/noNonNullAssertion: iter has return from Task 12
+  await iter.return!();
+  // Settle: cancel propagates, server stops, session stays healthy.
+  await new Promise((r) => setTimeout(r, 20));
+  expect(highWater).toBeLessThan(cancelAt + 50); // server bounded — actually should be very close
+
+  // Session is still alive:
+  const r = await a.call('echo', { ok: true });
+  expect(r).toEqual({ ok: true });
+});

@@ -178,6 +178,12 @@ export class Session {
       return;
     }
 
+    if (e.type === 'cancel') {
+      const s = this.serverStreams.get(e.stream_id);
+      s?.cancel();
+      return;
+    }
+
     if (e.type === 'stream_end') {
       const s = this.streams.get(e.stream_id);
       if (!s) return;
