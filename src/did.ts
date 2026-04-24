@@ -22,8 +22,12 @@ export function encodeDidKey(publicKey: Uint8Array): string {
 export function decodeDidKey(did: string): Uint8Array {
   if (!did.startsWith('did:key:z')) throw new Error('not a did:key identifier');
   const bytes = base58.decode(did.slice('did:key:z'.length));
-  if (bytes[0] !== MULTICODEC_ED25519_PUB[0] || bytes[1] !== MULTICODEC_ED25519_PUB[1]) {
-    throw new Error('did:key is not an Ed25519 key (wrong multicodec prefix)');
+  if (
+    bytes.length < 34 ||
+    bytes[0] !== MULTICODEC_ED25519_PUB[0] ||
+    bytes[1] !== MULTICODEC_ED25519_PUB[1]
+  ) {
+    throw new Error('did:key is not an Ed25519 key (wrong multicodec prefix or truncated)');
   }
   return bytes.slice(2);
 }

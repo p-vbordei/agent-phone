@@ -10,6 +10,12 @@ test('encode + decode did:key roundtrips an Ed25519 pubkey', () => {
 });
 
 test('decodeDidKey rejects bad multicodec prefix', () => {
+  // secp256k1 did:key — valid encoding, wrong algorithm.
   const did = 'did:key:zQ3shokFTS3brHcDQrn82RUDfCZESWL1ZdCEJwekUDPQiYBme';
   expect(() => decodeDidKey(did)).toThrow();
+});
+
+test('decodeDidKey rejects truncated input', () => {
+  // Valid base58 for just the 2 multicodec bytes — no pubkey body.
+  expect(() => decodeDidKey('did:key:zR2')).toThrow();
 });
