@@ -93,6 +93,18 @@ test('server blocks at credit=0 and resumes after credits granted', async () => 
   expect(got[19]).toBe(19);
 });
 
+test('handler throw → error frame; session survives, second call works', async () => {
+  const { a, b } = linkedSessions();
+  b.handle('boom', () => {
+    throw new Error('kaboom');
+  });
+  b.handle('echo', (p) => p);
+  await expect(a.call('boom')).rejects.toThrow('kaboom');
+  // Crucially: the session is still functional.
+  const result = await a.call('echo', { ok: 1 });
+  expect(result).toEqual({ ok: 1 });
+});
+
 test('cancel mid-stream leaves session usable for next RPC', async () => {
   const { a, b } = linkedSessions();
   let highWater = -1;
