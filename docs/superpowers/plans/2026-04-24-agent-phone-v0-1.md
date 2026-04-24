@@ -99,6 +99,13 @@ key is fed to the Noise state machine as the pre-known responder
 static. If the responder does not actually hold that static (e.g. the
 DID Document is stale or tampered), the handshake aborts deterministically
 at message 2 (AEAD failure on `ee`/`es` key derivation).
+
+Initiator MUST signal its own DID to the responder before the handshake
+begins, so the responder can construct the matching prologue. The
+reference signaling mechanism is a URL query parameter: initiator dials
+`ws://<host>[:<port>][/<path>]?caller=<initiator_did>`. The DID is
+public, so plaintext transmission is acceptable; prologue binding still
+prevents any other party from impersonating the initiator.
 ```
 
 - [ ] **Step 2: Edit SPEC §3 framing section**
@@ -282,7 +289,7 @@ Purpose: types + empty functions so every later task can import cleanly.
 export { connect, type ClientOptions, type Client } from './client.ts';
 export { createServer, type ServerOptions, type Server, type Handler } from './server.ts';
 export { type Envelope } from './envelope.ts';
-export type { KeyPair } from './did.ts';
+export { generateKeyPair, encodeDidKey, decodeDidKey, type KeyPair } from './did.ts';
 ```
 
 - [ ] **Step 2: Create `src/did.ts` stub**
@@ -807,8 +814,6 @@ export function buildPrologue(_initiatorDid: string, _responderDid: string): Uin
   throw new Error('not implemented');
 }
 
-// re-export for tests
-export { x25519, ed25519PrivToX25519, ed25519PubToX25519, DHLEN, HASHLEN };
 ```
 
 - [ ] **Step 4: Run the test**
@@ -1519,7 +1524,7 @@ export type Server = {
 };
 
 type PerSocket = {
-  step: 0 | 1 | 2 | 3;
+  step: 1 | 2 | 3;
   hs: ReturnType<typeof responderHandshake>;
   cipher?: FrameCipher;
   session?: Session;
@@ -1538,35 +1543,27 @@ export function createServer(opts: ServerOptions): Server {
       port,
       hostname,
       fetch(req, server) {
-        if (server.upgrade(req, {
+        const url = new URL(req.url);
+        const callerDid = url.searchParams.get('caller');
+        if (!callerDid) return new Response('missing ?caller=<did>', { status: 400 });
+        const ok = server.upgrade(req, {
           data: {
-            step: 0,
+            step: 1,
             hs: responderHandshake({
-              prologue: new Uint8Array(0), // filled on message 1 below — we still need initiator DID first
+              prologue: buildPrologue(callerDid, opts.did),
               staticPriv,
               staticPub,
             }),
           } as PerSocket,
-        })) return;
-        return new Response('agent-phone.v1 only', { status: 426 });
+        });
+        if (!ok) return new Response('agent-phone.v1 only', { status: 426 });
       },
       websocket: {
         async message(ws, raw) {
           const buf = typeof raw === 'string' ? new TextEncoder().encode(raw) : new Uint8Array(raw as ArrayBuffer);
           const s = ws.data;
-          if (s.step === 0) {
-            // First message carries: initiator_did (2-byte LE length + bytes) then the Noise e,es payload
-            const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-            const didLen = view.getUint16(0, true);
-            const initDid = new TextDecoder().decode(buf.slice(2, 2 + didLen));
-            const m1 = buf.slice(2 + didLen);
-            // Rebuild handshake with real prologue.
-            s.hs = responderHandshake({
-              prologue: buildPrologue(initDid, opts.did),
-              staticPriv,
-              staticPub,
-            });
-            s.hs.readMessage1(m1);
+          if (s.step === 1) {
+            s.hs.readMessage1(buf);
             ws.sendBinary(s.hs.writeMessage2());
             s.step = 2;
           } else if (s.step === 2) {
@@ -1634,7 +1631,10 @@ export async function connect(opts: ClientOptions): Promise<Client> {
   const staticPriv = ed25519PrivToX25519(opts.privateKey);
   const staticPub = ed25519PubToX25519(decodeDidKey(opts.did));
 
-  const ws = new WebSocket(opts.url, 'agent-phone.v1');
+  // Append ?caller=<did> so the responder can build the matching prologue.
+  const u = new URL(opts.url);
+  u.searchParams.set('caller', opts.did);
+  const ws = new WebSocket(u.toString(), 'agent-phone.v1');
   ws.binaryType = 'arraybuffer';
   await new Promise<void>((r, j) => {
     ws.addEventListener('open', () => r(), { once: true });
@@ -1648,14 +1648,7 @@ export async function connect(opts: ClientOptions): Promise<Client> {
     responderStaticPub,
   });
 
-  // Message 1 with a DID-length prefix so the responder can build its prologue.
-  const didBytes = new TextEncoder().encode(opts.did);
-  const m1 = hs.writeMessage1();
-  const m1Framed = new Uint8Array(2 + didBytes.length + m1.length);
-  new DataView(m1Framed.buffer).setUint16(0, didBytes.length, true);
-  m1Framed.set(didBytes, 2);
-  m1Framed.set(m1, 2 + didBytes.length);
-  ws.send(m1Framed);
+  ws.send(hs.writeMessage1());
 
   const m2 = await nextBinary(ws);
   hs.readMessage2(new Uint8Array(m2));
