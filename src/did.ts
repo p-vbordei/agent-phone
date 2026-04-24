@@ -1,4 +1,4 @@
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519, edwardsToMontgomeryPub, edwardsToMontgomeryPriv } from '@noble/curves/ed25519';
 import { base58 } from '@scure/base';
 
 export type KeyPair = { publicKey: Uint8Array; privateKey: Uint8Array };
@@ -32,9 +32,9 @@ export function decodeDidKey(did: string): Uint8Array {
   return bytes.slice(2);
 }
 
-export function ed25519PubToX25519(_edPub: Uint8Array): Uint8Array {
-  throw new Error('not implemented');
+export function ed25519PubToX25519(edPub: Uint8Array): Uint8Array {
+  return edwardsToMontgomeryPub(edPub);
 }
-export function ed25519PrivToX25519(_edPriv: Uint8Array): Uint8Array {
-  throw new Error('not implemented');
+export function ed25519PrivToX25519(edPriv: Uint8Array): Uint8Array {
+  return edwardsToMontgomeryPriv(edPriv);
 }
