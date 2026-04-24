@@ -40,6 +40,10 @@ export class Session {
     return p;
   }
 
+  stream(_method: string, _params?: unknown, _credits = 8): AsyncIterable<unknown> {
+    throw new Error('streams not implemented yet — Task 12');
+  }
+
   close(): void {
     this.t.close();
   }
