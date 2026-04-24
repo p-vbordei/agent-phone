@@ -1,6 +1,6 @@
-# agent-phone — v0.1 specification (DRAFT)
+# agent-phone — v0.1 specification
 
-**Status:** draft, not yet implemented.
+**Status:** 1.0 — released 2026-04-24.
 
 ## Abstract
 
