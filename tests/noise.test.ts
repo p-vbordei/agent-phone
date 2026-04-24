@@ -86,7 +86,8 @@ test('Noise_XK handshake aborts if responder static key does not match', () => {
   });
 
   const m1 = init.writeMessage1();
-  resp.readMessage1(m1); // accepts — responder doesn't know what initiator expected
-  const m2 = resp.writeMessage2();
-  expect(() => init.readMessage2(m2)).toThrow(); // AEAD fails under wrong ee/es derivation
+  // Standard Noise_XK authenticates message 1: initiator's tag over empty payload
+  // is computed under K = HKDF(ck, DH(e_init, s_resp_expected)). The responder,
+  // holding a different static, derives a different K and cannot verify the tag.
+  expect(() => resp.readMessage1(m1)).toThrow();
 });

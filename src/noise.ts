@@ -153,12 +153,13 @@ export function initiatorHandshake(opts: {
 
   return {
     writeMessage1(): Uint8Array {
-      // -> e, es  (no payload; AEAD deferred to message 3)
+      // -> e, es
       ePriv = x25519.utils.randomPrivateKey();
       const ePub = x25519.getPublicKey(ePriv);
       ss.mixHash(ePub);
       ss.mixKey(dh(ePriv, opts.responderStaticPub));
-      return ePub;
+      const encPayload = ss.encryptAndHash(new Uint8Array(0));
+      return concat(ePub, encPayload);
     },
     readMessage2(msg: Uint8Array): void {
       // <- e, ee
@@ -167,7 +168,7 @@ export function initiatorHandshake(opts: {
       const rest = msg.slice(32);
       ss.mixHash(rePub);
       ss.mixKey(dh(ePriv, rePub));
-      ss.decryptAndHash(rest); // AEAD tag (auth over h derived from both es and ee)
+      ss.decryptAndHash(rest);
     },
     writeMessage3(): Uint8Array {
       // -> s, se
@@ -202,10 +203,12 @@ export function responderHandshake(opts: {
 
   return {
     readMessage1(msg: Uint8Array): void {
-      // -> e, es  (no payload in message 1)
+      // -> e, es
       reInitPub = msg.slice(0, 32);
+      const rest = msg.slice(32);
       ss.mixHash(reInitPub);
       ss.mixKey(dh(opts.staticPriv, reInitPub));
+      ss.decryptAndHash(rest);
     },
     writeMessage2(): Uint8Array {
       // <- e, ee
