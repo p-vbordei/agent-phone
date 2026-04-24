@@ -1,5 +1,6 @@
 import { blake2s } from '@noble/hashes/blake2s';
 import { chacha20poly1305 } from '@noble/ciphers/chacha';
+import { x25519 } from '@noble/curves/ed25519';
 
 const PROTOCOL = 'Noise_XK_25519_ChaChaPoly_BLAKE2s';
 const HASHLEN = 32;
@@ -114,24 +115,123 @@ export type HandshakeResult = {
   recv: (ciphertext: Uint8Array) => Uint8Array;
 };
 
-// Handshake state machines implemented in Task 7.
-export function initiatorHandshake(_opts: {
+export function buildPrologue(initiatorDid: string, responderDid: string): Uint8Array {
+  const prefix = new TextEncoder().encode('agent-phone/1');
+  const init = new TextEncoder().encode(initiatorDid);
+  const resp = new TextEncoder().encode(responderDid);
+  const out = new Uint8Array(prefix.length + 2 + init.length + 2 + resp.length);
+  let off = 0;
+  out.set(prefix, off);
+  off += prefix.length;
+  new DataView(out.buffer).setUint16(off, init.length, false); // big-endian
+  off += 2;
+  out.set(init, off);
+  off += init.length;
+  new DataView(out.buffer).setUint16(off, resp.length, false);
+  off += 2;
+  out.set(resp, off);
+  return out;
+}
+
+function dh(priv: Uint8Array, pub: Uint8Array): Uint8Array {
+  return x25519.scalarMult(priv, pub);
+}
+
+export function initiatorHandshake(opts: {
   prologue: Uint8Array;
   staticPriv: Uint8Array;
   staticPub: Uint8Array;
   responderStaticPub: Uint8Array;
-}): never {
-  throw new Error('not implemented');
+}) {
+  const ss = new SymmetricState();
+  ss.mixHash(opts.prologue);
+  // XK pre-message: responder's static is known to the initiator.
+  ss.mixHash(opts.responderStaticPub);
+
+  let ePriv: Uint8Array | null = null;
+  let rePub: Uint8Array | null = null;
+
+  return {
+    writeMessage1(): Uint8Array {
+      // -> e, es  (no payload; AEAD deferred to message 3)
+      ePriv = x25519.utils.randomPrivateKey();
+      const ePub = x25519.getPublicKey(ePriv);
+      ss.mixHash(ePub);
+      ss.mixKey(dh(ePriv, opts.responderStaticPub));
+      return ePub;
+    },
+    readMessage2(msg: Uint8Array): void {
+      // <- e, ee
+      if (ePriv === null) throw new Error('writeMessage1 must run first');
+      rePub = msg.slice(0, 32);
+      const rest = msg.slice(32);
+      ss.mixHash(rePub);
+      ss.mixKey(dh(ePriv, rePub));
+      ss.decryptAndHash(rest); // AEAD tag (auth over h derived from both es and ee)
+    },
+    writeMessage3(): Uint8Array {
+      // -> s, se
+      if (rePub === null) throw new Error('readMessage2 must run first');
+      const encS = ss.encryptAndHash(opts.staticPub);
+      ss.mixKey(dh(opts.staticPriv, rePub));
+      const encPayload = ss.encryptAndHash(new Uint8Array(0));
+      return concat(encS, encPayload);
+    },
+    finish(): HandshakeResult {
+      const [sendCs, recvCs] = ss.split();
+      return {
+        send: (p: Uint8Array) => sendCs.encryptWithAd(new Uint8Array(0), p),
+        recv: (c: Uint8Array) => recvCs.decryptWithAd(new Uint8Array(0), c),
+      };
+    },
+  };
 }
-export function responderHandshake(_opts: {
+
+export function responderHandshake(opts: {
   prologue: Uint8Array;
   staticPriv: Uint8Array;
   staticPub: Uint8Array;
-}): never {
-  throw new Error('not implemented');
-}
+}) {
+  const ss = new SymmetricState();
+  ss.mixHash(opts.prologue);
+  // XK pre-message: responder's own static is absorbed.
+  ss.mixHash(opts.staticPub);
 
-// buildPrologue implemented in Task 7.
-export function buildPrologue(_initiatorDid: string, _responderDid: string): Uint8Array {
-  throw new Error('not implemented');
+  let ePriv: Uint8Array | null = null;
+  let reInitPub: Uint8Array | null = null;
+
+  return {
+    readMessage1(msg: Uint8Array): void {
+      // -> e, es  (no payload in message 1)
+      reInitPub = msg.slice(0, 32);
+      ss.mixHash(reInitPub);
+      ss.mixKey(dh(opts.staticPriv, reInitPub));
+    },
+    writeMessage2(): Uint8Array {
+      // <- e, ee
+      if (reInitPub === null) throw new Error('readMessage1 must run first');
+      ePriv = x25519.utils.randomPrivateKey();
+      const ePub = x25519.getPublicKey(ePriv);
+      ss.mixHash(ePub);
+      ss.mixKey(dh(ePriv, reInitPub));
+      const encPayload = ss.encryptAndHash(new Uint8Array(0));
+      return concat(ePub, encPayload);
+    },
+    readMessage3(msg: Uint8Array): void {
+      // -> s, se
+      if (ePriv === null) throw new Error('writeMessage2 must run first');
+      const encS = msg.slice(0, 32 + 16);
+      const rest = msg.slice(32 + 16);
+      const risPub = ss.decryptAndHash(encS);
+      ss.mixKey(dh(ePriv, risPub));
+      ss.decryptAndHash(rest);
+    },
+    finish(): HandshakeResult {
+      const [recvCs, sendCs] = ss.split();
+      return {
+        send: (p: Uint8Array) => sendCs.encryptWithAd(new Uint8Array(0), p),
+        recv: (c: Uint8Array) => recvCs.decryptWithAd(new Uint8Array(0), c),
+      };
+    },
+  };
 }
