@@ -61,3 +61,34 @@ test('server stream delivers chunks in order', async () => {
   for await (const chunk of a.stream('count', {}, 10)) got.push(chunk as number);
   expect(got).toEqual([0, 1, 2, 3, 4]);
 });
+
+test('server blocks at credit=0 and resumes after credits granted', async () => {
+  const { a, b } = linkedSessions();
+  let emittedCount = 0;
+  b.handle('torrent', async function* () {
+    for (let i = 0; i < 20; i++) {
+      emittedCount = i + 1;
+      yield i;
+    }
+  });
+  const initialCredits = 5;
+  const iter = a.stream('torrent', {}, initialCredits)[Symbol.asyncIterator]();
+
+  // Pull just 1 chunk — the other 4 from the initial grant should arrive and sit
+  // in the client's queue. Server parks at granted=0 until auto-refill kicks in.
+  const first = await iter.next();
+  expect(first.value).toBe(0);
+  await new Promise((r) => setTimeout(r, 10));
+  // At this point: server emitted up to initialCredits chunks, then parked.
+  expect(emittedCount).toBeLessThanOrEqual(initialCredits);
+
+  // Drain the rest — auto-refill on the client carries us through.
+  const got: number[] = [first.value as number];
+  for (;;) {
+    const r = await iter.next();
+    if (r.done) break;
+    got.push(r.value as number);
+  }
+  expect(got.length).toBe(20);
+  expect(got[19]).toBe(19);
+});
