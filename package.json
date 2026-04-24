@@ -1,0 +1,40 @@
+{
+  "name": "agent-phone",
+  "version": "0.1.0",
+  "description": "Minimal sync RPC between two AI agents. Self-custody keys, Noise-framework handshake, DID-bound WebSocket.",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./server": "./src/server.ts"
+  },
+  "bin": {
+    "agent-phone": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "conformance": "bun conformance/run.ts",
+    "demo": "bun examples/demo.ts",
+    "build": "bun build --compile --outfile=dist/agent-phone src/index.ts",
+    "fmt": "biome format --write .",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.0.0",
+    "@noble/curves": "^1.6.0",
+    "@noble/hashes": "^1.5.0",
+    "@scure/base": "^1.1.9",
+    "canonicalize": "^2.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "license": "Apache-2.0"
+}
