@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import canonicalize from 'canonicalize';
 
 export const EnvelopeSchema = z.object({
   stream_id: z.number().int().nonnegative(),
@@ -14,9 +15,16 @@ export const EnvelopeSchema = z.object({
 
 export type Envelope = z.infer<typeof EnvelopeSchema>;
 
-export function encode(_env: Envelope): Uint8Array {
-  throw new Error('not implemented');
+export function encode(env: Envelope): Uint8Array {
+  EnvelopeSchema.parse(env);
+  const s = canonicalize(env);
+  if (typeof s !== 'string') {
+    throw new Error('canonicalize returned non-string');
+  }
+  return new TextEncoder().encode(s);
 }
-export function decode(_bytes: Uint8Array): Envelope {
-  throw new Error('not implemented');
+
+export function decode(bytes: Uint8Array): Envelope {
+  const text = new TextDecoder().decode(bytes);
+  return EnvelopeSchema.parse(JSON.parse(text));
 }
