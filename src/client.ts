@@ -47,8 +47,21 @@ export async function connect(opts: ClientOptions): Promise<Client> {
 
   ws.send(hs.writeMessage1());
 
-  const m2 = await nextBinary(ws);
-  hs.readMessage2(new Uint8Array(m2));
+  let m2: ArrayBuffer;
+  try {
+    m2 = await nextBinary(ws, 1000);
+  } catch (err) {
+    ws.close();
+    throw new Error(`agent-phone: handshake failed before message 2 (${(err as Error).message}). ` +
+      `Most likely cause: the server at ${opts.url} does not hold the static key ` +
+      `pinned by ${opts.responderDid}. Verify the responder DID Document.`);
+  }
+  try {
+    hs.readMessage2(new Uint8Array(m2));
+  } catch {
+    ws.close();
+    throw new Error(`agent-phone: message 2 AEAD failed. Responder's advertised static does not match ${opts.responderDid}.`);
+  }
   ws.send(hs.writeMessage3());
 
   const transport = hs.finish();
@@ -61,20 +74,11 @@ export async function connect(opts: ClientOptions): Promise<Client> {
     recvCb?.(decode(pt));
   });
 
-  const session = new Session(
-    {
-      send: (env) => {
-        ws.send(cipher.seal(encode(env)));
-      },
-      onRecv: (cb) => {
-        recvCb = cb;
-      },
-      close: () => {
-        ws.close();
-      },
-    },
-    'initiator',
-  );
+  const session = new Session({
+    send: (env) => { ws.send(cipher.seal(encode(env))); },
+    onRecv: (cb) => { recvCb = cb; },
+    close: () => { ws.close(); },
+  }, 'initiator');
 
   return {
     call: (m, p) => session.call(m, p),
@@ -88,14 +92,25 @@ export async function connect(opts: ClientOptions): Promise<Client> {
   };
 }
 
-function nextBinary(ws: WebSocket): Promise<ArrayBuffer> {
-  return new Promise((resolve) => {
-    const handler = (ev: MessageEvent) => {
-      if (ev.data instanceof ArrayBuffer) {
-        ws.removeEventListener('message', handler);
-        resolve(ev.data);
-      }
+function nextBinary(ws: WebSocket, timeoutMs?: number): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const done = (err?: Error, val?: ArrayBuffer) => {
+      clearTimeout(timer);
+      ws.removeEventListener('message', onMsg);
+      ws.removeEventListener('close', onClose);
+      ws.removeEventListener('error', onErr);
+      err ? reject(err) : resolve(val!);
     };
-    ws.addEventListener('message', handler);
+    const onMsg = (ev: MessageEvent) => {
+      if (ev.data instanceof ArrayBuffer) done(undefined, ev.data);
+    };
+    const onClose = () => done(new Error('handshake aborted: WebSocket closed before response'));
+    const onErr = () => done(new Error('handshake aborted: WebSocket error'));
+    const timer = timeoutMs !== undefined
+      ? setTimeout(() => done(new Error(`handshake aborted: no response within ${timeoutMs}ms`)), timeoutMs)
+      : undefined;
+    ws.addEventListener('message', onMsg);
+    ws.addEventListener('close', onClose);
+    ws.addEventListener('error', onErr);
   });
 }

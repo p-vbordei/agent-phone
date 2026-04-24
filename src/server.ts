@@ -62,6 +62,7 @@ export function createServer(opts: ServerOptions): Server {
                 ? raw
                 : new Uint8Array(raw as ArrayBuffer);
           const s = ws.data;
+          try {
           if (s.step === 1) {
             s.hs.readMessage1(buf);
             ws.sendBinary(s.hs.writeMessage2());
@@ -87,6 +88,9 @@ export function createServer(opts: ServerOptions): Server {
           } else if (s.step === 3) {
             const pt = s.cipher!.open(buf);
             s.recvCb?.(decode(pt));
+          }
+          } catch {
+            ws.close();
           }
         },
         close(ws) {
