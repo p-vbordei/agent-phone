@@ -51,3 +51,13 @@ test('handler that throws → error frame; caller gets rejection', async () => {
   });
   await expect(a.call('boom', {})).rejects.toThrow(/kaboom/);
 });
+
+test('server stream delivers chunks in order', async () => {
+  const { a, b } = linkedSessions();
+  b.handle('count', async function* () {
+    for (let i = 0; i < 5; i++) yield i;
+  });
+  const got: number[] = [];
+  for await (const chunk of a.stream('count', {}, 10)) got.push(chunk as number);
+  expect(got).toEqual([0, 1, 2, 3, 4]);
+});
