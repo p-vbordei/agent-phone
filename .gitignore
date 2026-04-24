@@ -1,0 +1,31 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Build / deps
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+.venv/
+venv/
+*.egg-info/
+
+# Logs / tmp
+*.log
+tmp/
+.cache/
