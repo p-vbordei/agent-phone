@@ -1,6 +1,6 @@
-# agent-phone — v0.1 specification (DRAFT)
+# agent-phone — v0.1 specification
 
-**Status:** draft, not yet implemented.
+**Status:** 1.0 — released 2026-04-24.
 
 ## Abstract
 
@@ -34,17 +34,36 @@ Static keys are derived from agents' Ed25519 signing keys via Ed25519-to-X25519 
 
 Three WebSocket binary frames carry the Noise messages:
 
-1. `e`               (initiator → responder)
-2. `e, ee, s, es`    (responder → initiator)
+1. `e, es`           (initiator → responder)
+2. `e, ee`           (responder → initiator)
 3. `s, se`           (initiator → responder)
 
 After the third message, transport encryption begins.
 
-If the responder's static key in the handshake does NOT match the responder's DID Document verification method, the initiator MUST abort.
+Initiator MUST obtain the responder's static public key from the
+responder's DID Document verification method (via the referenced DID
+method — `did:key` in v0.1) BEFORE opening the WebSocket. The static
+key is fed to the Noise state machine as the pre-known responder
+static. If the responder does not actually hold that static (e.g. the
+DID Document is stale or tampered), the handshake aborts deterministically
+at message 2 (AEAD failure on `ee`/`es` key derivation).
+
+Initiator MUST signal its own DID to the responder before the handshake
+begins, so the responder can construct the matching prologue. The
+reference signaling mechanism is a URL query parameter: initiator dials
+`ws://<host>[:<port>][/<path>]?caller=<initiator_did>`. The DID is
+public, so plaintext transmission is acceptable; prologue binding still
+prevents any other party from impersonating the initiator.
 
 ## 3. Frame format
 
-Post-handshake, each WebSocket binary frame is a length-prefixed Noise transport frame. The decrypted plaintext is a JSON object:
+Post-handshake, each WebSocket binary message carries exactly one
+Noise transport frame: the ChaChaPoly ciphertext of the plaintext
+JSON envelope with the 16-byte authentication tag appended. The
+WebSocket message boundary is the frame boundary; no additional
+length prefix is required.
+
+The decrypted plaintext is a JSON object:
 
 ```
 {

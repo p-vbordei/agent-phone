@@ -10,7 +10,34 @@ Think "two agents picking up the phone, proving who they are, and talking." Not 
 
 ## Status
 
-**0.0 — design phase.** Draft spec in [SPEC.md](./SPEC.md). No code yet.
+**v0.1.0 — released 2026-04-24.** Spec: [SPEC.md](./SPEC.md). Reference implementation in TypeScript + Bun.
+
+## Quickstart
+
+```bash
+bun install
+bun test
+bun examples/demo.ts
+```
+
+That's it. Three commands, no Docker, no services. The demo spawns a responder and an initiator in one process, completes a Noise_XK handshake bound to both agents' DIDs, runs a unary `echo`, streams `search` with credit-based backpressure, cancels mid-stream, and reuses the same session for another unary call. Takes about a second.
+
+The primary public API is two functions:
+
+```typescript
+import { createServer, connect, generateKeyPair, encodeDidKey } from 'agent-phone';
+
+const { publicKey, privateKey } = generateKeyPair();
+const did = encodeDidKey(publicKey);
+
+const server = createServer({ did, privateKey, handlers: { echo: (p) => p } });
+await server.listen(7777);
+
+const client = await connect({ url: 'ws://localhost:7777', did, privateKey, responderDid: did });
+console.log(await client.call('echo', { hi: 1 }));
+```
+
+Conformance vectors that other implementations can validate against live in [conformance/](./conformance/). Run them with `bun conformance/run.ts`.
 
 ## The gap
 
