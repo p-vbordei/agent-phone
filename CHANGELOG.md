@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1 — 2026-04-28
+
+Metadata-only release: npm package renamed from `agent-phone` to `@p-vbordei/agent-phone` now that the `p-vbordei` org exists on npm. No code changes. Install: `npm i @p-vbordei/agent-phone`. The unscoped name was never published.
+
 ## v0.1.0 — 2026-04-24
 
 Initial release. What landed:
